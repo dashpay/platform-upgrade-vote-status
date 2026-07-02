@@ -12,6 +12,20 @@ export function formatDuration(ms: number): string {
   return `~${(hours / 24).toFixed(1)} d`;
 }
 
+export const formatTimestamp = (ms: number): string =>
+  new Date(ms).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+/** "in ~2.1 d" / "imminent" once the boundary time has passed. */
+export function formatTimeUntil(ms: number): string {
+  const remaining = ms - Date.now();
+  return remaining < 60_000 ? 'imminent' : `in ${formatDuration(remaining)}`;
+}
+
 const versionParts = (v: string): number[] =>
   v
     .replace(/[^0-9.].*$/, '')

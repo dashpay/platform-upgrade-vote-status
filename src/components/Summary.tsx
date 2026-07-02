@@ -1,5 +1,11 @@
 import type { DashboardData } from '../types';
-import { isFlipPending, latestSoftware, majorOf } from '../lib/format';
+import {
+  formatTimestamp,
+  formatTimeUntil,
+  isFlipPending,
+  latestSoftware,
+  majorOf,
+} from '../lib/format';
 
 export function Summary({ data }: { data: DashboardData }) {
   const { upgradeState, votesByVersion, requiredVotes, latestProtocolVersion } = data;
@@ -77,7 +83,8 @@ export function Summary({ data }: { data: DashboardData }) {
           </div>
           {thresholdReached && (
             <div className="activation">
-              Threshold reached — the upgrade activates at the next epoch boundary.
+              Threshold reached — the upgrade activates at the next epoch boundary (
+              {formatTimeUntil(data.epochEndsAtMs)}, {formatTimestamp(data.epochEndsAtMs)}).
             </div>
           )}
         </div>
@@ -94,6 +101,10 @@ export function Summary({ data }: { data: DashboardData }) {
         )}
         <span>
           Epoch <strong>{data.epoch.index}</strong>
+        </span>
+        <span title="The epoch flips on the first block proposed after this time">
+          Epoch ends <strong>{formatTimeUntil(data.epochEndsAtMs)}</strong> (
+          {formatTimestamp(data.epochEndsAtMs)})
         </span>
         <span>
           Height <strong>{data.quorums.metadata.height.toString()}</strong>

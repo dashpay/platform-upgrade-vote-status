@@ -5,6 +5,12 @@ import { fetchAllVotes, fetchEpochInfo, fetchMasternodes, fetchUpgradeState } fr
 import { buildProposalSchedule } from './schedule';
 import type { DashboardData, Network, NodeRow } from '../types';
 
+// drive-abci epoch_time_length_s: 788400s (9.125 d) default; testnet runs 1-hour epochs.
+const EPOCH_DURATION_MS: Record<Network, number> = {
+  mainnet: 788_400_000,
+  testnet: 3_600_000,
+};
+
 const reverseHex = (h: string): string => {
   let out = '';
   for (let i = h.length - 2; i >= 0; i -= 2) out += h.slice(i, i + 2);
@@ -118,5 +124,6 @@ export async function loadDashboardData(network: Network): Promise<DashboardData
     requiredVotes,
     latestProtocolVersion,
     avgBlockTimeMs,
+    epochEndsAtMs: Number(epoch.firstBlockTime) + EPOCH_DURATION_MS[network],
   };
 }

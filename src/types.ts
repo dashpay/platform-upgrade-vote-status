@@ -83,4 +83,5 @@ export interface DashboardData {
   requiredVotes: number; // 1 + activeEvonodes * 67 / 100 (integer division)
   latestProtocolVersion: number; // the version being upgraded to (max seen)
   avgBlockTimeMs: number;
+  epochEndsAtMs: number; // epoch start + network epoch duration (boundary is the first block after this)
 }
