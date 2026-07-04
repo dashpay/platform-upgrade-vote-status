@@ -340,6 +340,136 @@ tr.flip-pending {
   margin-top: 10px;
 }
 
+/* ---- status view ---- */
+
+.release-line {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+}
+
+.release-line a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.status-hero {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px 24px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.status-hero h2 {
+  margin: 0 0 8px;
+  font-size: 26px;
+}
+
+.status-hero p {
+  margin: 0 auto;
+  max-width: 560px;
+  color: var(--muted);
+}
+
+.status-hero .hero-emoji {
+  font-size: 44px;
+  line-height: 1;
+  margin-bottom: 10px;
+}
+
+.status-hero.locked-in {
+  border-color: rgba(63, 185, 80, 0.55);
+  background:
+    radial-gradient(ellipse at top, rgba(63, 185, 80, 0.16), transparent 65%),
+    var(--panel);
+}
+
+.status-hero.locked-in h2 {
+  color: var(--good);
+}
+
+.status-hero.active {
+  border-color: rgba(63, 185, 80, 0.35);
+}
+
+.status-hero.active h2 {
+  color: var(--good);
+}
+
+.status-hero.voting {
+  text-align: left;
+}
+
+.status-hero.voting h2 {
+  font-size: 18px;
+}
+
+.status-hero.voting .progress {
+  margin: 12px 0;
+}
+
+.status-hero.voting p {
+  max-width: none;
+  margin: 0;
+}
+
+.status-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+  font-size: 13px;
+}
+
+button.detail-link,
+button.back-link {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+button.detail-link:hover,
+button.back-link:hover {
+  border-color: var(--accent);
+}
+
+button.back-link {
+  margin-bottom: 14px;
+}
+
+/* ---- confetti fanfare ---- */
+
+.fanfare {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 100;
+}
+
+.confetti {
+  position: absolute;
+  top: -20px;
+  animation-name: confetti-fall;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+}
+
+@keyframes confetti-fall {
+  to {
+    transform: translate(var(--drift, 0px), 105vh) rotate(var(--spin, 540deg));
+  }
+}
+
 footer {
   margin-top: 28px;
   color: var(--muted);

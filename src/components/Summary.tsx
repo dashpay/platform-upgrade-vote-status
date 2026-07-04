@@ -8,7 +8,7 @@ import {
 } from '../lib/format';
 
 export function Summary({ data }: { data: DashboardData }) {
-  const { upgradeState, votesByVersion, requiredVotes, latestProtocolVersion } = data;
+  const { votesByVersion, requiredVotes, latestProtocolVersion } = data;
 
   const latestSw = latestSoftware(data.nodes);
   const latestMajor = latestSw ? majorOf(latestSw) : 0;
@@ -22,6 +22,7 @@ export function Summary({ data }: { data: DashboardData }) {
 
   const upgradeInProgress = latestProtocolVersion > data.epoch.protocolVersion;
   const thresholdReached = votedLatest >= requiredVotes;
+  const lockedIn = data.nextEpochProtocolVersion > data.epoch.protocolVersion;
   const progress = Math.min(1, votedLatest / Math.max(1, requiredVotes));
 
   return (
@@ -70,22 +71,32 @@ export function Summary({ data }: { data: DashboardData }) {
         <div className="progress-wrap">
           <div className="progress-labels">
             <span>
-              Upgrade to protocol version {latestProtocolVersion} — {votedLatest}/{requiredVotes}{' '}
-              votes (67% of active evonodes{thresholdReached ? ', threshold reached' : ''})
+              {lockedIn ? 'Re-signaling' : 'Upgrade to'} protocol version {latestProtocolVersion}{' '}
+              — {votedLatest}/{requiredVotes} votes this epoch (67% of active evonodes
+              {thresholdReached ? ', threshold reached' : ''})
             </span>
             <span>{Math.round(progress * 100)}%</span>
           </div>
           <div className="progress">
             <div
-              className={`progress-bar ${thresholdReached ? 'good' : ''}`}
+              className={`progress-bar ${thresholdReached || lockedIn ? 'good' : ''}`}
               style={{ width: `${progress * 100}%` }}
             />
           </div>
-          {thresholdReached && (
+          {lockedIn ? (
             <div className="activation">
-              Threshold reached — the upgrade activates at the next epoch boundary (
-              {formatTimeUntil(data.epochEndsAtMs)}, {formatTimestamp(data.epochEndsAtMs)}).
+              PV{data.nextEpochProtocolVersion} is locked in on-chain (next epoch protocol
+              version) — it activates at the epoch boundary ({formatTimeUntil(data.epochEndsAtMs)}
+              , {formatTimestamp(data.epochEndsAtMs)}) regardless of this epoch&rsquo;s tally.
             </div>
+          ) : (
+            thresholdReached && (
+              <div className="activation">
+                Threshold reached — if the tally holds, the version locks in at the next epoch
+                boundary ({formatTimeUntil(data.epochEndsAtMs)},{' '}
+                {formatTimestamp(data.epochEndsAtMs)}) and activates one epoch later.
+              </div>
+            )
           )}
         </div>
       )}
@@ -94,11 +105,9 @@ export function Summary({ data }: { data: DashboardData }) {
         <span>
           Current protocol version: <strong>PV{data.epoch.protocolVersion}</strong>
         </span>
-        {upgradeState.nextProtocolVersion != null && (
-          <span>
-            Next: <strong>PV{upgradeState.nextProtocolVersion}</strong>
-          </span>
-        )}
+        <span title="next_epoch_protocol_version from the chain — the on-chain lock-in signal">
+          Next epoch: <strong>PV{data.nextEpochProtocolVersion}</strong>
+        </span>
         <span>
           Epoch <strong>{data.epoch.index}</strong>
         </span>

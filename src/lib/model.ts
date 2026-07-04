@@ -1,9 +1,10 @@
 // Assembles the dashboard model from the three data sources.
 
-import { fetchCurrentQuorumsInfo } from './grpcweb';
+import { fetchCurrentQuorumsInfo, fetchDriveStatus } from './grpcweb';
 import { fetchAllVotes, fetchEpochInfo, fetchMasternodes, fetchUpgradeState } from './sdk';
+import { fetchLatestRelease } from './github';
 import { buildProposalSchedule } from './schedule';
-import type { DashboardData, Network, NodeRow } from '../types';
+import type { DashboardData, Network, NodeRow, StatusData, UpgradePhase } from '../types';
 
 // drive-abci epoch_time_length_s: 788400s (9.125 d) default; testnet runs 1-hour epochs.
 const EPOCH_DURATION_MS: Record<Network, number> = {
@@ -32,14 +33,75 @@ function alignKeys<V>(map: Map<string, V>, canonical: Set<string>): Map<string, 
   return new Map(Array.from(map.entries(), ([k, v]) => [reverseHex(k), v]));
 }
 
+// drive-abci: required = 1 + active_hpmns * protocol_version_upgrade_percentage_needed / 100
+const requiredVotesFor = (activeEvonodes: number): number =>
+  1 + Math.floor((activeEvonodes * 67) / 100);
+
+/**
+ * Cheap status check: GitHub latest release plus three light queries.
+ * Skips the paginated per-node vote enumeration and quorum info entirely.
+ */
+export async function loadStatusData(network: Network): Promise<StatusData> {
+  const masternodesPromise = fetchMasternodes(network);
+  const [release, upgradeState, epoch, masternodes, driveStatus] = await Promise.all([
+    fetchLatestRelease().catch((e) => {
+      console.warn('GitHub release lookup failed, falling back to chain data', e);
+      return null;
+    }),
+    fetchUpgradeState(network),
+    fetchEpochInfo(network),
+    masternodesPromise,
+    masternodesPromise.then((mns) => fetchDriveStatus(network, mns)),
+  ]);
+
+  const target =
+    release?.targetProtocolVersion ??
+    Math.max(driveStatus.nextEpoch, upgradeState.nextProtocolVersion ?? 0, driveStatus.current);
+
+  const activeEvonodes = masternodes.filter((m) => m.status === 'ENABLED').length;
+  const requiredVotes = requiredVotesFor(activeEvonodes);
+
+  const votesForTarget =
+    upgradeState.nextProtocolVersion === target && upgradeState.nextVersionVotes != null
+      ? Number(upgradeState.nextVersionVotes)
+      : 0;
+
+  // Lock-in is decided at the epoch boundary: drive tallies the previous
+  // epoch's votes and, if the threshold was met, schedules the version as
+  // next_epoch_protocol_version. The current epoch's running tally is only a
+  // preview of the next boundary decision.
+  let phase: UpgradePhase = 'voting';
+  if (driveStatus.current >= target) {
+    phase = 'active';
+  } else if (driveStatus.nextEpoch >= target) {
+    phase = 'locked-in';
+  }
+
+  return {
+    network,
+    fetchedAt: Date.now(),
+    release,
+    phase,
+    currentProtocolVersion: driveStatus.current,
+    nextEpochProtocolVersion: driveStatus.nextEpoch,
+    targetProtocolVersion: target,
+    votesForTarget,
+    requiredVotes,
+    activeEvonodes,
+    epochIndex: epoch.index,
+    epochEndsAtMs: Number(epoch.firstBlockTime) + EPOCH_DURATION_MS[network],
+  };
+}
+
 export async function loadDashboardData(network: Network): Promise<DashboardData> {
   const masternodesPromise = fetchMasternodes(network);
-  const [masternodes, votesRaw, upgradeState, epoch, quorums] = await Promise.all([
+  const [masternodes, votesRaw, upgradeState, epoch, quorums, driveStatus] = await Promise.all([
     masternodesPromise,
     fetchAllVotes(network),
     fetchUpgradeState(network),
     fetchEpochInfo(network),
     masternodesPromise.then((mns) => fetchCurrentQuorumsInfo(network, mns)),
+    masternodesPromise.then((mns) => fetchDriveStatus(network, mns)),
   ]);
 
   const canonical = new Set(masternodes.map((m) => m.proTxHash.toLowerCase()));
@@ -101,8 +163,7 @@ export async function loadDashboardData(network: Network): Promise<DashboardData
   }
 
   const activeEvonodes = masternodes.filter((m) => m.status === 'ENABLED').length;
-  // drive-abci: required = 1 + active_hpmns * protocol_version_upgrade_percentage_needed / 100
-  const requiredVotes = 1 + Math.floor((activeEvonodes * 67) / 100);
+  const requiredVotes = requiredVotesFor(activeEvonodes);
 
   const latestProtocolVersion = Math.max(
     upgradeState.currentProtocolVersion,
@@ -115,6 +176,7 @@ export async function loadDashboardData(network: Network): Promise<DashboardData
     network,
     fetchedAt: Date.now(),
     upgradeState,
+    nextEpochProtocolVersion: driveStatus.nextEpoch,
     epoch,
     quorums,
     nodes: Array.from(rows.values()),
