@@ -70,10 +70,47 @@ export interface NodeRow {
   eta?: ProposalEta;
 }
 
+/** Latest dashpay/platform GitHub release and the protocol version it ships. */
+export interface ReleaseInfo {
+  tag: string;
+  name: string;
+  url: string;
+  publishedAt: number; // ms
+  targetProtocolVersion: number;
+}
+
+export type UpgradePhase =
+  | 'active' // the release's protocol version is already live on-chain
+  | 'locked-in' // chain has scheduled it as next_epoch_protocol_version; activates at the epoch boundary
+  | 'voting'; // votes still accumulating toward the threshold
+
+/**
+ * Lightweight status model — answers "is the release's protocol version locked in?"
+ * using only cheap calls (GitHub release + upgrade state + epoch + masternode count),
+ * without paginating per-node votes or fetching quorum info.
+ */
+export interface StatusData {
+  network: Network;
+  fetchedAt: number;
+  release: ReleaseInfo | null; // null when GitHub is unreachable (fall back to chain data)
+  phase: UpgradePhase;
+  currentProtocolVersion: number;
+  /** Chain-scheduled version for the next epoch (getStatus drive.nextEpoch) — the lock-in signal. */
+  nextEpochProtocolVersion: number;
+  targetProtocolVersion: number;
+  votesForTarget: number; // chain-side tally (0 when the chain's "next" differs from target)
+  requiredVotes: number;
+  activeEvonodes: number;
+  epochIndex: number;
+  epochEndsAtMs: number;
+}
+
 export interface DashboardData {
   network: Network;
   fetchedAt: number;
   upgradeState: UpgradeState;
+  /** Chain-scheduled version for the next epoch (getStatus drive.nextEpoch) — the lock-in signal. */
+  nextEpochProtocolVersion: number;
   epoch: EpochInfo;
   quorums: CurrentQuorumsInfo;
   nodes: NodeRow[];

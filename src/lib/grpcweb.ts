@@ -1,5 +1,5 @@
-// Minimal gRPC-Web (application/grpc-web+proto) client for the single unproved
-// DAPI call the dashboard needs: Platform.getCurrentQuorumsInfo.
+// Minimal gRPC-Web (application/grpc-web+proto) client for the unproved DAPI
+// calls the dashboard needs: Platform.getCurrentQuorumsInfo and Platform.getStatus.
 //
 // Hand-rolled to avoid pulling the full @dashevo/dapi-grpc dependency tree into
 // a static site. Field numbers mirror packages/dapi-grpc/protos/platform/v0/platform.proto.
@@ -189,15 +189,16 @@ function grpcWebFrames(body: Uint8Array): Uint8Array {
   return out;
 }
 
-async function callGetCurrentQuorumsInfo(endpoint: string): Promise<CurrentQuorumsInfo> {
-  // GetCurrentQuorumsInfoRequest { v0: {} } → field 1, empty embedded message.
+/** Call a unary Platform method whose request is `{ v0: {} }` and return the response's v0 bytes. */
+async function callUnaryV0(endpoint: string, method: string): Promise<Uint8Array> {
+  // Request { v0: {} } → field 1, empty embedded message.
   const request = new Uint8Array([0x0a, 0x00]);
   const framed = new Uint8Array(5 + request.length);
   framed[3] = 0; // 4-byte BE length
   framed[4] = request.length;
   framed.set(request, 5);
 
-  const res = await fetch(`${endpoint}/org.dash.platform.dapi.v0.Platform/getCurrentQuorumsInfo`, {
+  const res = await fetch(`${endpoint}/org.dash.platform.dapi.v0.Platform/${method}`, {
     method: 'POST',
     headers: {
       'content-type': 'application/grpc-web+proto',
@@ -214,29 +215,94 @@ async function callGetCurrentQuorumsInfo(endpoint: string): Promise<CurrentQuoru
   const body = new Uint8Array(await res.arrayBuffer());
   const message = grpcWebFrames(body);
 
-  // GetCurrentQuorumsInfoResponse { v0 = 1 }
+  // Response { v0 = 1 }
   const r = new Reader(message);
   while (!r.eof) {
     const { field, wire } = r.tag();
-    if (field === 1 && wire === 2) return parseResponseV0(r.bytes());
+    if (field === 1 && wire === 2) return r.bytes();
     r.skip(wire);
   }
-  throw new Error(`${endpoint}: empty getCurrentQuorumsInfo response`);
+  throw new Error(`${endpoint}: empty ${method} response`);
 }
 
-/** Fetch current quorums info, trying random evonode endpoints until one answers. */
-export async function fetchCurrentQuorumsInfo(
+/** Try random evonode endpoints until one answers. */
+async function withEndpoints<T>(
   network: Network,
   masternodes: MasternodeEntry[],
-): Promise<CurrentQuorumsInfo> {
+  call: (endpoint: string) => Promise<T>,
+): Promise<T> {
   const endpoints = dapiEndpoints(network, masternodes).sort(() => Math.random() - 0.5);
   let lastError: unknown;
   for (const endpoint of endpoints.slice(0, 8)) {
     try {
-      return await callGetCurrentQuorumsInfo(endpoint);
+      return await call(endpoint);
     } catch (e) {
       lastError = e;
     }
   }
   throw lastError instanceof Error ? lastError : new Error('no DAPI endpoint reachable');
+}
+
+export function fetchCurrentQuorumsInfo(
+  network: Network,
+  masternodes: MasternodeEntry[],
+): Promise<CurrentQuorumsInfo> {
+  return withEndpoints(network, masternodes, async (endpoint) =>
+    parseResponseV0(await callUnaryV0(endpoint, 'getCurrentQuorumsInfo')),
+  );
+}
+
+/** Drive protocol-version state from Platform.getStatus. */
+export interface DriveProtocolStatus {
+  latest: number; // highest version the responding node's software supports
+  current: number; // version in force this epoch
+  nextEpoch: number; // version that will be used next epoch — the lock-in signal
+}
+
+// GetStatusResponseV0: Version(1) → Protocol(2) → Drive(2) → { latest=3, current=4, next_epoch=5 }
+function parseStatusV0(buf: Uint8Array): DriveProtocolStatus {
+  const status: DriveProtocolStatus = { latest: 0, current: 0, nextEpoch: 0 };
+  const v0 = new Reader(buf);
+  while (!v0.eof) {
+    const t = v0.tag();
+    if (t.field !== 1 || t.wire !== 2) {
+      v0.skip(t.wire);
+      continue;
+    }
+    const version = new Reader(v0.bytes());
+    while (!version.eof) {
+      const vt = version.tag();
+      if (vt.field !== 2 || vt.wire !== 2) {
+        version.skip(vt.wire);
+        continue;
+      }
+      const protocol = new Reader(version.bytes());
+      while (!protocol.eof) {
+        const pt = protocol.tag();
+        if (pt.field !== 2 || pt.wire !== 2) {
+          protocol.skip(pt.wire);
+          continue;
+        }
+        const drive = new Reader(protocol.bytes());
+        while (!drive.eof) {
+          const dt = drive.tag();
+          if (dt.field === 3 && dt.wire === 0) status.latest = Number(drive.varint());
+          else if (dt.field === 4 && dt.wire === 0) status.current = Number(drive.varint());
+          else if (dt.field === 5 && dt.wire === 0) status.nextEpoch = Number(drive.varint());
+          else drive.skip(dt.wire);
+        }
+      }
+    }
+  }
+  if (!status.current) throw new Error('getStatus: drive protocol section missing');
+  return status;
+}
+
+export function fetchDriveStatus(
+  network: Network,
+  masternodes: MasternodeEntry[],
+): Promise<DriveProtocolStatus> {
+  return withEndpoints(network, masternodes, async (endpoint) =>
+    parseStatusV0(await callUnaryV0(endpoint, 'getStatus')),
+  );
 }
