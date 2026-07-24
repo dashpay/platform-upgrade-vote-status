@@ -53,13 +53,37 @@ export function latestSoftware(nodes: NodeRow[]): string | null {
   return best;
 }
 
-export const majorOf = (v: string): number => versionParts(v)[0] ?? 0;
+/**
+ * Protocol-relevant release series: [major, minor].
+ *
+ * A protocol-version bump can ship in either a major or a minor release — PV12
+ * came with v4.0.0, PV13 comes with v4.1.0 — so major alone cannot distinguish
+ * upgraded nodes from stale ones. Patch releases are bugfix-only and never
+ * change the protocol version, so they are not part of the series.
+ */
+const seriesOf = (v: string): [number, number] => {
+  const p = versionParts(v);
+  return [p[0] ?? 0, p[1] ?? 0];
+};
 
-/** Software already on the new major, but the on-chain vote hasn't flipped yet. */
-export function isFlipPending(n: NodeRow, latestMajor: number, latestPv: number): boolean {
+/** "4.1" — the series, for display. */
+export const seriesLabel = (v: string): string => seriesOf(v).join('.');
+
+function compareSeries(a: string, b: string): number {
+  const [aMajor, aMinor] = seriesOf(a);
+  const [bMajor, bMinor] = seriesOf(b);
+  return aMajor - bMajor || aMinor - bMinor;
+}
+
+/** Node is on the newest release series seen on the network (or ahead of it). */
+export const isCurrentSoftware = (v: string, latestSw: string): boolean =>
+  compareSeries(v, latestSw) >= 0;
+
+/** Software already on the new series, but the on-chain vote hasn't flipped yet. */
+export function isFlipPending(n: NodeRow, latestSw: string, latestPv: number): boolean {
   return (
     n.driveVersion != null &&
-    majorOf(n.driveVersion) >= latestMajor &&
+    isCurrentSoftware(n.driveVersion, latestSw) &&
     n.votedVersion !== latestPv
   );
 }

@@ -3,9 +3,9 @@ import type { DashboardData, NodeRow } from '../types';
 import {
   compareVersions,
   formatDuration,
+  isCurrentSoftware,
   isFlipPending,
   latestSoftware,
-  majorOf,
   shortHash,
 } from '../lib/format';
 
@@ -18,8 +18,7 @@ export function NodeTable({ data }: { data: DashboardData }) {
   const [sortAsc, setSortAsc] = useState(true);
   const [search, setSearch] = useState('');
 
-  const latestSw = latestSoftware(data.nodes);
-  const latestMajor = latestSw ? majorOf(latestSw) : 0;
+  const latestSw = latestSoftware(data.nodes) ?? '0';
   const latestPv = data.latestProtocolVersion;
   const upgradeInProgress = latestPv > data.epoch.protocolVersion;
 
@@ -27,13 +26,13 @@ export function NodeTable({ data }: { data: DashboardData }) {
     let rows = data.nodes;
     switch (filter) {
       case 'flip-pending':
-        rows = rows.filter((n) => isFlipPending(n, latestMajor, latestPv));
+        rows = rows.filter((n) => isFlipPending(n, latestSw, latestPv));
         break;
       case 'voted-latest':
         rows = rows.filter((n) => n.votedVersion === latestPv);
         break;
       case 'old-software':
-        rows = rows.filter((n) => !n.driveVersion || majorOf(n.driveVersion) < latestMajor);
+        rows = rows.filter((n) => !n.driveVersion || !isCurrentSoftware(n.driveVersion, latestSw));
         break;
       case 'active-set':
         rows = rows.filter((n) => n.inActiveQuorum);
@@ -47,7 +46,7 @@ export function NodeTable({ data }: { data: DashboardData }) {
     }
     const dir = sortAsc ? 1 : -1;
     return [...rows].sort((a, b) => dir * compareRows(a, b, sortKey));
-  }, [data.nodes, filter, search, sortKey, sortAsc, latestMajor, latestPv]);
+  }, [data.nodes, filter, search, sortKey, sortAsc, latestSw, latestPv]);
 
   const header = (key: SortKey, label: string) => (
     <th
@@ -109,7 +108,7 @@ export function NodeTable({ data }: { data: DashboardData }) {
               <Row
                 key={n.proTxHash}
                 n={n}
-                latestMajor={latestMajor}
+                latestSw={latestSw}
                 latestPv={latestPv}
                 upgradeInProgress={upgradeInProgress}
               />
@@ -145,19 +144,19 @@ function compareRows(a: NodeRow, b: NodeRow, key: SortKey): number {
 
 function Row({
   n,
-  latestMajor,
+  latestSw,
   latestPv,
   upgradeInProgress,
 }: {
   n: NodeRow;
-  latestMajor: number;
+  latestSw: string;
   latestPv: number;
   upgradeInProgress: boolean;
 }) {
-  const flipPending = upgradeInProgress && isFlipPending(n, latestMajor, latestPv);
+  const flipPending = upgradeInProgress && isFlipPending(n, latestSw, latestPv);
   const swTone = !n.driveVersion
     ? 'muted'
-    : majorOf(n.driveVersion) >= latestMajor
+    : isCurrentSoftware(n.driveVersion, latestSw)
       ? 'good'
       : 'bad';
   const voteTone = n.votedVersion == null ? 'muted' : n.votedVersion === latestPv ? 'good' : 'warn';

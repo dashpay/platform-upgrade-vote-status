@@ -2,22 +2,22 @@ import type { DashboardData } from '../types';
 import {
   formatTimestamp,
   formatTimeUntil,
+  isCurrentSoftware,
   isFlipPending,
   latestSoftware,
-  majorOf,
+  seriesLabel,
 } from '../lib/format';
 
 export function Summary({ data }: { data: DashboardData }) {
   const { votesByVersion, requiredVotes, latestProtocolVersion } = data;
 
-  const latestSw = latestSoftware(data.nodes);
-  const latestMajor = latestSw ? majorOf(latestSw) : 0;
+  const latestSw = latestSoftware(data.nodes) ?? '0';
   const softwareUpgraded = data.nodes.filter(
-    (n) => n.driveVersion && majorOf(n.driveVersion) >= latestMajor,
+    (n) => n.driveVersion && isCurrentSoftware(n.driveVersion, latestSw),
   ).length;
   const votedLatest = votesByVersion.get(latestProtocolVersion) ?? 0;
   const flipPending = data.nodes.filter((n) =>
-    isFlipPending(n, latestMajor, latestProtocolVersion),
+    isFlipPending(n, latestSw, latestProtocolVersion),
   ).length;
 
   const upgradeInProgress = latestProtocolVersion > data.epoch.protocolVersion;
@@ -30,9 +30,9 @@ export function Summary({ data }: { data: DashboardData }) {
       <div className="cards">
         <Card label="Active evonodes" value={data.activeEvonodes} sub={`${data.nodes.length} known`} />
         <Card
-          label={`Running v${latestMajor} software`}
+          label={`Running v${seriesLabel(latestSw)} software`}
           value={softwareUpgraded}
-          sub={latestSw ? `latest ${latestSw}` : undefined}
+          sub={latestSw !== '0' ? `latest ${latestSw}` : undefined}
           tone="good"
         />
         {upgradeInProgress ? (
