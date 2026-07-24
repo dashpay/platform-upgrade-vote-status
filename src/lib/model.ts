@@ -44,7 +44,7 @@ const requiredVotesFor = (activeEvonodes: number): number =>
 export async function loadStatusData(network: Network): Promise<StatusData> {
   const masternodesPromise = fetchMasternodes(network);
   const [release, upgradeState, epoch, masternodes, driveStatus] = await Promise.all([
-    fetchLatestRelease().catch((e) => {
+    fetchLatestRelease(network).catch((e) => {
       console.warn('GitHub release lookup failed, falling back to chain data', e);
       return null;
     }),
