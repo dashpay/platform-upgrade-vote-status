@@ -77,6 +77,7 @@ export interface ReleaseInfo {
   url: string;
   publishedAt: number; // ms
   targetProtocolVersion: number;
+  prerelease: boolean; // release candidate / beta — only ever selected for testnet
 }
 
 export type UpgradePhase =

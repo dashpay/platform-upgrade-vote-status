@@ -4,7 +4,7 @@
 import { compareVersions } from './format';
 import type { Network, ReleaseInfo } from '../types';
 
-const CACHE_PREFIX = 'platform-latest-release-v2';
+const CACHE_PREFIX = 'platform-latest-release-v3';
 const CACHE_TTL_MS = 15 * 60_000;
 
 interface GitHubRelease {
@@ -13,6 +13,7 @@ interface GitHubRelease {
   html_url: string;
   published_at: string;
   draft: boolean;
+  prerelease: boolean;
 }
 
 /**
@@ -35,6 +36,7 @@ export async function fetchLatestRelease(network: Network): Promise<ReleaseInfo>
     url: json.html_url,
     publishedAt: Date.parse(json.published_at),
     targetProtocolVersion: await fetchTargetProtocolVersion(json.tag_name),
+    prerelease: json.prerelease,
   };
 
   try {
@@ -89,6 +91,7 @@ function readCache(network: Network): ReleaseInfo | null {
     const { at, release } = JSON.parse(raw) as { at: number; release: ReleaseInfo };
     if (Date.now() - at > CACHE_TTL_MS) return null;
     if (typeof release?.targetProtocolVersion !== 'number') return null;
+    if (typeof release?.prerelease !== 'boolean') return null;
     return release;
   } catch {
     return null;

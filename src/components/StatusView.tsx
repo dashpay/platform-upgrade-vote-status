@@ -48,6 +48,14 @@ export function StatusView({
             <a href={release.url} target="_blank" rel="noreferrer">
               <strong>{release.name}</strong>
             </a>{' '}
+            {release.prerelease && (
+              <span
+                className="badge warn"
+                title="Not a stable release — a release candidate or beta, tracked here because testnet exercises them ahead of the stable tag"
+              >
+                prerelease
+              </span>
+            )}
             <span className="muted">
               (published {formatTimestamp(release.publishedAt)}) — ships protocol version{' '}
               <strong>PV{release.targetProtocolVersion}</strong>
