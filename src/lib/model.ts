@@ -3,8 +3,17 @@
 import { fetchCurrentQuorumsInfo, fetchDriveStatus } from './grpcweb';
 import { fetchAllVotes, fetchEpochInfo, fetchMasternodes, fetchUpgradeState } from './sdk';
 import { fetchLatestRelease } from './github';
+import { describeError } from './errors';
 import { buildProposalSchedule } from './schedule';
-import type { DashboardData, Network, NodeRow, StatusData, UpgradePhase } from '../types';
+import type {
+  DashboardData,
+  EpochInfo,
+  Network,
+  NodeRow,
+  StatusData,
+  UpgradePhase,
+  UpgradeState,
+} from '../types';
 
 // drive-abci epoch_time_length_s: 788400s (9.125 d) default; testnet runs 1-hour epochs.
 const EPOCH_DURATION_MS: Record<Network, number> = {
@@ -37,32 +46,64 @@ function alignKeys<V>(map: Map<string, V>, canonical: Set<string>): Map<string, 
 const requiredVotesFor = (activeEvonodes: number): number =>
   1 + Math.floor((activeEvonodes * 67) / 100);
 
+type ProvedStatus =
+  | { ok: true; upgradeState: UpgradeState; epoch: EpochInfo }
+  | { ok: false; error: string };
+
+/**
+ * The proof-verified half of the status check, isolated so it can fail on its
+ * own. Verification depends on the network's active quorum being present in
+ * the published quorum set; when a network stalls, its validator quorum can
+ * age out of that set and every proved query fails — while the unproved
+ * getStatus that actually carries the lock-in signal keeps working.
+ */
+async function loadProvedStatus(network: Network): Promise<ProvedStatus> {
+  try {
+    const [upgradeState, epoch] = await Promise.all([
+      fetchUpgradeState(network),
+      fetchEpochInfo(network),
+    ]);
+    return { ok: true, upgradeState, epoch };
+  } catch (e) {
+    const error = describeError(e);
+    console.warn(`${network}: proved queries failed, falling back to unverified status`, error);
+    return { ok: false, error };
+  }
+}
+
 /**
  * Cheap status check: GitHub latest release plus three light queries.
  * Skips the paginated per-node vote enumeration and quorum info entirely.
+ *
+ * Degrades rather than failing when proofs cannot be verified: the lock-in
+ * answer survives, the epoch timing and vote tally do not, and the caller is
+ * told via `unverified`. A failure of the unproved queries still throws — at
+ * that point nothing is known.
  */
 export async function loadStatusData(network: Network): Promise<StatusData> {
   const masternodesPromise = fetchMasternodes(network);
-  const [release, upgradeState, epoch, masternodes, driveStatus] = await Promise.all([
+  const [release, masternodes, driveStatus, proved] = await Promise.all([
     fetchLatestRelease(network).catch((e) => {
       console.warn('GitHub release lookup failed, falling back to chain data', e);
       return null;
     }),
-    fetchUpgradeState(network),
-    fetchEpochInfo(network),
     masternodesPromise,
     masternodesPromise.then((mns) => fetchDriveStatus(network, mns)),
+    loadProvedStatus(network),
   ]);
+
+  const upgradeState = proved.ok ? proved.upgradeState : null;
 
   const target =
     release?.targetProtocolVersion ??
-    Math.max(driveStatus.nextEpoch, upgradeState.nextProtocolVersion ?? 0, driveStatus.current);
+    Math.max(driveStatus.nextEpoch, upgradeState?.nextProtocolVersion ?? 0, driveStatus.current);
 
   const activeEvonodes = masternodes.filter((m) => m.status === 'ENABLED').length;
   const requiredVotes = requiredVotesFor(activeEvonodes);
 
-  const votesForTarget =
-    upgradeState.nextProtocolVersion === target && upgradeState.nextVersionVotes != null
+  const votesForTarget = !upgradeState
+    ? null
+    : upgradeState.nextProtocolVersion === target && upgradeState.nextVersionVotes != null
       ? Number(upgradeState.nextVersionVotes)
       : 0;
 
@@ -88,8 +129,11 @@ export async function loadStatusData(network: Network): Promise<StatusData> {
     votesForTarget,
     requiredVotes,
     activeEvonodes,
-    epochIndex: epoch.index,
-    epochEndsAtMs: Number(epoch.firstBlockTime) + EPOCH_DURATION_MS[network],
+    epochIndex: proved.ok ? proved.epoch.index : null,
+    epochEndsAtMs: proved.ok
+      ? Number(proved.epoch.firstBlockTime) + EPOCH_DURATION_MS[network]
+      : null,
+    unverified: proved.ok ? null : proved.error,
   };
 }
 

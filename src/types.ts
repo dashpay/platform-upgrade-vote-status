@@ -99,11 +99,19 @@ export interface StatusData {
   /** Chain-scheduled version for the next epoch (getStatus drive.nextEpoch) — the lock-in signal. */
   nextEpochProtocolVersion: number;
   targetProtocolVersion: number;
-  votesForTarget: number; // chain-side tally (0 when the chain's "next" differs from target)
+  votesForTarget: number | null; // chain-side tally (0 when the chain's "next" differs from target)
   requiredVotes: number;
   activeEvonodes: number;
-  epochIndex: number;
-  epochEndsAtMs: number;
+  epochIndex: number | null;
+  epochEndsAtMs: number | null;
+  /**
+   * Why the proof-verified queries were skipped, or null when they succeeded.
+   *
+   * The lock-in signal itself comes from an unproved getStatus, so it survives
+   * a verification failure — but the epoch timing and vote tally do not, and
+   * the numbers that remain must be labelled as unverified.
+   */
+  unverified: string | null;
 }
 
 export interface DashboardData {

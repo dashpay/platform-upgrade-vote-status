@@ -34,12 +34,28 @@ export function StatusView({
     }
   }, [phase, target, data.network]);
 
-  const progress = Math.min(1, data.votesForTarget / Math.max(1, data.requiredVotes));
-  const thresholdReached = data.votesForTarget >= data.requiredVotes;
+  const votes = data.votesForTarget;
+  const progress = votes == null ? 0 : Math.min(1, votes / Math.max(1, data.requiredVotes));
+  const thresholdReached = votes != null && votes >= data.requiredVotes;
 
   return (
     <section className="status-view">
       {celebrate && <Fanfare />}
+
+      {data.unverified && (
+        <div className="unverified-line">
+          <span className="badge warn">unverified</span>
+          <span>
+            Proofs could not be verified against {data.network}&rsquo;s published quorums, so this
+            reads the protocol version straight from the evonodes without checking their proofs.
+            Epoch timing and the vote tally are unavailable.
+          </span>
+          <details className="error-detail">
+            <summary>Technical detail</summary>
+            <code>{data.unverified}</code>
+          </details>
+        </div>
+      )}
 
       <div className="release-line">
         {release ? (
@@ -74,8 +90,16 @@ export function StatusView({
           <h2>Protocol version {target} locked in!</h2>
           <p>
             The chain has scheduled PV{target} as the next epoch&rsquo;s protocol version — it
-            activates when epoch {data.epochIndex + 1} begins, {formatTimeUntil(data.epochEndsAtMs)}{' '}
-            ({formatTimestamp(data.epochEndsAtMs)}). Nothing more is needed.
+            activates{' '}
+            {data.epochIndex != null && data.epochEndsAtMs != null ? (
+              <>
+                when epoch {data.epochIndex + 1} begins, {formatTimeUntil(data.epochEndsAtMs)} (
+                {formatTimestamp(data.epochEndsAtMs)})
+              </>
+            ) : (
+              'at the next epoch boundary'
+            )}
+            . Nothing more is needed.
           </p>
         </div>
       )}
@@ -90,32 +114,44 @@ export function StatusView({
 
       {phase === 'voting' && (
         <div className="status-hero voting">
-          <h2>
-            Voting on protocol version {target} — {data.votesForTarget}/{data.requiredVotes}
-          </h2>
-          <div className="progress">
-            <div
-              className={`progress-bar ${thresholdReached ? 'good' : ''}`}
-              style={{ width: `${progress * 100}%` }}
-            />
-          </div>
-          <p className="muted">
-            {thresholdReached ? (
-              <>
-                Threshold reached — if the tally holds, PV{target} locks in at the epoch{' '}
-                {data.epochIndex} boundary ({formatTimeUntil(data.epochEndsAtMs)}) and activates
-                one epoch later.
-              </>
-            ) : (
-              <>
-                {data.requiredVotes - data.votesForTarget} more votes needed (67% of{' '}
-                {data.activeEvonodes} active evonodes). Votes are cast as upgraded nodes propose
-                blocks; the tally is checked at the epoch boundary (
-                {formatTimeUntil(data.epochEndsAtMs)}) and locks in the version for the epoch
-                after.
-              </>
-            )}
-          </p>
+          {votes == null ? (
+            <>
+              <h2>Protocol version {target} is not locked in yet</h2>
+              <p className="muted">
+                The chain still reports PV{data.nextEpochProtocolVersion} for the next epoch. The
+                vote tally needs a proof-verified query, so it is unavailable while{' '}
+                {data.network}&rsquo;s proofs cannot be checked.
+              </p>
+            </>
+          ) : (
+            <>
+              <h2>
+                Voting on protocol version {target} — {votes}/{data.requiredVotes}
+              </h2>
+              <div className="progress">
+                <div
+                  className={`progress-bar ${thresholdReached ? 'good' : ''}`}
+                  style={{ width: `${progress * 100}%` }}
+                />
+              </div>
+              <p className="muted">
+                {thresholdReached ? (
+                  <>
+                    Threshold reached — if the tally holds, PV{target} locks in at the epoch{' '}
+                    {data.epochIndex} boundary ({formatTimeUntil(data.epochEndsAtMs ?? 0)}) and
+                    activates one epoch later.
+                  </>
+                ) : (
+                  <>
+                    {data.requiredVotes - votes} more votes needed (67% of {data.activeEvonodes}{' '}
+                    active evonodes). Votes are cast as upgraded nodes propose blocks; the tally is
+                    checked at the epoch boundary ({formatTimeUntil(data.epochEndsAtMs ?? 0)}) and
+                    locks in the version for the epoch after.
+                  </>
+                )}
+              </p>
+            </>
+          )}
         </div>
       )}
 
@@ -126,13 +162,17 @@ export function StatusView({
         <span title="next_epoch_protocol_version from the chain — the on-chain lock-in signal">
           Next epoch: <strong>PV{data.nextEpochProtocolVersion}</strong>
         </span>
-        <span>
-          Epoch <strong>{data.epochIndex}</strong>
-        </span>
-        <span title="The epoch flips on the first block proposed after this time">
-          Epoch ends <strong>{formatTimeUntil(data.epochEndsAtMs)}</strong> (
-          {formatTimestamp(data.epochEndsAtMs)})
-        </span>
+        {data.epochIndex != null && (
+          <span>
+            Epoch <strong>{data.epochIndex}</strong>
+          </span>
+        )}
+        {data.epochEndsAtMs != null && (
+          <span title="The epoch flips on the first block proposed after this time">
+            Epoch ends <strong>{formatTimeUntil(data.epochEndsAtMs)}</strong> (
+            {formatTimestamp(data.epochEndsAtMs)})
+          </span>
+        )}
         <span>
           Active evonodes <strong>{data.activeEvonodes}</strong>
         </span>
