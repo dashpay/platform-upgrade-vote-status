@@ -19,9 +19,32 @@ export function describeError(e: unknown): string {
 }
 
 /**
- * DAPI exhausted its endpoint list without reaching an evonode, i.e. the
- * network itself looks down rather than the query being wrong. Both the
- * first-attempt and post-retry phrasings start the same way.
+ * Address exhaustion is reported as "no available addresses to retry, last
+ * error: <cause>". The wrapper only says every endpoint was tried — the cause
+ * is the part that explains why, so unwrap it before classifying.
  */
-export const isNetworkUnreachable = (message: string): boolean =>
-  /no available addresses/i.test(message) || /no DAPI endpoint reachable/i.test(message);
+export function rootCause(message: string): string {
+  const m = /last error:\s*(.+)$/is.exec(message);
+  return m ? m[1].trim() : message;
+}
+
+export type FailureKind =
+  | 'unreachable' // nothing answered
+  | 'unverifiable' // nodes answered, but their proofs did not check out
+  | 'unknown';
+
+/**
+ * Note the ordering: exhausting the address list is a *consequence* of the
+ * underlying failure, and its message quotes that failure verbatim, so a
+ * verification problem would otherwise be misread as the network being down.
+ */
+export function classifyFailure(message: string): FailureKind {
+  const cause = rootCause(message);
+  if (/proof verification|quorum not found in cache|context provider error/i.test(cause)) {
+    return 'unverifiable';
+  }
+  if (/no available addresses|no addresses available|no DAPI endpoint reachable/i.test(message)) {
+    return 'unreachable';
+  }
+  return 'unknown';
+}

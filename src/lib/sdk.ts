@@ -2,6 +2,7 @@
 // masternode-list REST endpoint used by the SDK's trusted context provider.
 
 import { EvoSDK } from '@dashevo/evo-sdk';
+import { describeError } from './errors';
 import type { EpochInfo, MasternodeEntry, Network, UpgradeState } from '../types';
 
 const instances: Partial<Record<Network, Promise<EvoSDK>>> = {};
@@ -17,9 +18,46 @@ export function getSdk(network: Network): Promise<EvoSDK> {
   return instances[network]!;
 }
 
+/**
+ * Failures an existing SDK instance can never recover from, because the state
+ * that broke is fixed at construction time:
+ *
+ * - The DAPI client bans an address when a request to it fails, and only
+ *   unbans one when it *successfully responds*. If every address ends up
+ *   banned — which is what a network-wide outage does — no request can
+ *   succeed, so nothing can ever be unbanned, and the instance stays dead long
+ *   after the network comes back.
+ * - Trusted mode prefetches the quorum set during connect(). Once the chain
+ *   rotates to a quorum that predates the prefetch, proof verification fails
+ *   against a cache that is never refilled.
+ *
+ * `connect()` is idempotent, so neither can be reset in place — the instance
+ * has to be rebuilt.
+ */
+const isPoisoned = (message: string): boolean =>
+  /no available addresses/i.test(message) || /quorum not found in cache/i.test(message);
+
+/**
+ * Run a query, discarding the cached SDK if it fails in a way that instance
+ * cannot come back from. The next call then builds a fresh one, so recovery
+ * costs at most one refresh interval rather than needing a page reload.
+ */
+async function withSdk<T>(network: Network, fn: (sdk: EvoSDK) => Promise<T>): Promise<T> {
+  const pending = getSdk(network);
+  try {
+    return await fn(await pending);
+  } catch (e) {
+    // Identity check: concurrent callers failing together must not evict a
+    // replacement instance that has already been built.
+    if (isPoisoned(describeError(e)) && instances[network] === pending) {
+      delete instances[network];
+    }
+    throw e;
+  }
+}
+
 export async function fetchUpgradeState(network: Network): Promise<UpgradeState> {
-  const sdk = await getSdk(network);
-  const s = await sdk.protocol.versionUpgradeState();
+  const s = await withSdk(network, (sdk) => sdk.protocol.versionUpgradeState());
   return {
     currentProtocolVersion: s.currentProtocolVersion,
     nextProtocolVersion: s.nextProtocolVersion ?? null,
@@ -31,30 +69,30 @@ export async function fetchUpgradeState(network: Network): Promise<UpgradeState>
 
 /** Enumerate every masternode protocol-version vote (paginated, deduped). */
 export async function fetchAllVotes(network: Network): Promise<Map<string, number>> {
-  const sdk = await getSdk(network);
-  const votes = new Map<string, number>();
-  const pageSize = 100;
-  let start: string | undefined;
-  for (let page = 0; page < 100; page++) {
-    const batch = await sdk.protocol.versionUpgradeVoteStatus(start, pageSize);
-    let added = 0;
-    let last: string | undefined;
-    for (const [proTxHash, status] of batch.entries()) {
-      last = proTxHash;
-      if (!votes.has(proTxHash)) {
-        votes.set(proTxHash, status.version);
-        added++;
+  return withSdk(network, async (sdk) => {
+    const votes = new Map<string, number>();
+    const pageSize = 100;
+    let start: string | undefined;
+    for (let page = 0; page < 100; page++) {
+      const batch = await sdk.protocol.versionUpgradeVoteStatus(start, pageSize);
+      let added = 0;
+      let last: string | undefined;
+      for (const [proTxHash, status] of batch.entries()) {
+        last = proTxHash;
+        if (!votes.has(proTxHash)) {
+          votes.set(proTxHash, status.version);
+          added++;
+        }
       }
+      if (batch.size < pageSize || added === 0 || !last) break;
+      start = last;
     }
-    if (batch.size < pageSize || added === 0 || !last) break;
-    start = last;
-  }
-  return votes;
+    return votes;
+  });
 }
 
 export async function fetchEpochInfo(network: Network): Promise<EpochInfo> {
-  const sdk = await getSdk(network);
-  const e = await sdk.epoch.current();
+  const e = await withSdk(network, (sdk) => sdk.epoch.current());
   return {
     index: e.index,
     firstBlockHeight: BigInt(e.firstBlockHeight),

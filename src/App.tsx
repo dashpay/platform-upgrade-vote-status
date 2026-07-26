@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { describeError, isNetworkUnreachable } from './lib/errors';
+import { classifyFailure, describeError, type FailureKind } from './lib/errors';
 import { loadDashboardData, loadStatusData } from './lib/model';
 import { Summary } from './components/Summary';
 import { NodeTable } from './components/NodeTable';
@@ -12,7 +12,7 @@ type View = 'status' | 'detail';
 
 interface LoadError {
   message: string;
-  unreachable: boolean; // the network is down, as opposed to the query failing
+  kind: FailureKind;
 }
 
 export default function App() {
@@ -47,7 +47,7 @@ export default function App() {
       const message = describeError(e);
       console.error(message, e);
       if (id === requestId.current) {
-        setError({ message, unreachable: isNetworkUnreachable(message) });
+        setError({ message, kind: classifyFailure(message) });
       }
     } finally {
       if (id === requestId.current) setLoading(false);
@@ -106,14 +106,21 @@ export default function App() {
 
       {error && (
         <div className="error">
-          {error.unreachable ? (
+          {error.kind === 'unknown' ? (
+            <>
+              <div className="error-title">Failed to load {network} data</div>
+              <p>{error.message}</p>
+            </>
+          ) : (
             <>
               <div className="error-title">
-                <span className="net-name">{network}</span> is not responding
+                <span className="net-name">{network}</span>{' '}
+                {error.kind === 'unreachable' ? 'is not responding' : 'could not be verified'}
               </div>
               <p>
-                No evonode on {network} answered, so the chain queries could not run. The network
-                may be down or mid-upgrade — this is not a problem with your connection.
+                {error.kind === 'unreachable'
+                  ? `No evonode on ${network} answered, so the chain queries could not run. The network may be down — this is not a problem with your connection.`
+                  : `Evonodes on ${network} answered, but their proofs did not verify against the quorums this page knows about. That usually means the network is mid-upgrade or reorganising its quorums.`}
               </p>
               <div className="error-actions">
                 <button className="detail-link" onClick={() => switchNetwork(otherNetwork)}>
@@ -121,18 +128,11 @@ export default function App() {
                 </button>
                 <span className="muted">retrying every {REFRESH_MS / 1000}s</span>
               </div>
+              <details className="error-detail">
+                <summary>Technical detail</summary>
+                <code>{error.message}</code>
+              </details>
             </>
-          ) : (
-            <>
-              <div className="error-title">Failed to load {network} data</div>
-              <p>{error.message}</p>
-            </>
-          )}
-          {error.unreachable && (
-            <details className="error-detail">
-              <summary>Technical detail</summary>
-              <code>{error.message}</code>
-            </details>
           )}
         </div>
       )}
