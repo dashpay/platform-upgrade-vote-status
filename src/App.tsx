@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { describeError, isNetworkUnreachable } from './lib/errors';
 import { loadDashboardData, loadStatusData } from './lib/model';
 import { Summary } from './components/Summary';
 import { NodeTable } from './components/NodeTable';
@@ -9,12 +10,17 @@ const REFRESH_MS = 60_000;
 
 type View = 'status' | 'detail';
 
+interface LoadError {
+  message: string;
+  unreachable: boolean; // the network is down, as opposed to the query failing
+}
+
 export default function App() {
   const [network, setNetwork] = useState<Network>('mainnet');
   const [view, setView] = useState<View>('status');
   const [status, setStatus] = useState<StatusData | null>(null);
   const [detail, setDetail] = useState<DashboardData | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<LoadError | null>(null);
   const [loading, setLoading] = useState(true);
   const requestId = useRef(0);
 
@@ -38,9 +44,10 @@ export default function App() {
         }
       }
     } catch (e) {
-      console.error(e);
+      const message = describeError(e);
+      console.error(message, e);
       if (id === requestId.current) {
-        setError(e instanceof Error ? e.message : String(e));
+        setError({ message, unreachable: isNetworkUnreachable(message) });
       }
     } finally {
       if (id === requestId.current) setLoading(false);
@@ -63,6 +70,7 @@ export default function App() {
   };
 
   const current = view === 'status' ? status : detail;
+  const otherNetwork: Network = network === 'mainnet' ? 'testnet' : 'mainnet';
 
   return (
     <div className="app">
@@ -98,7 +106,34 @@ export default function App() {
 
       {error && (
         <div className="error">
-          Failed to load {network} data: {error}
+          {error.unreachable ? (
+            <>
+              <div className="error-title">
+                <span className="net-name">{network}</span> is not responding
+              </div>
+              <p>
+                No evonode on {network} answered, so the chain queries could not run. The network
+                may be down or mid-upgrade — this is not a problem with your connection.
+              </p>
+              <div className="error-actions">
+                <button className="detail-link" onClick={() => switchNetwork(otherNetwork)}>
+                  View {otherNetwork} instead →
+                </button>
+                <span className="muted">retrying every {REFRESH_MS / 1000}s</span>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="error-title">Failed to load {network} data</div>
+              <p>{error.message}</p>
+            </>
+          )}
+          {error.unreachable && (
+            <details className="error-detail">
+              <summary>Technical detail</summary>
+              <code>{error.message}</code>
+            </details>
+          )}
         </div>
       )}
 

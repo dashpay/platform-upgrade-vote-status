@@ -99,6 +99,42 @@ button.refresh:disabled {
   margin-bottom: 16px;
 }
 
+.error p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
+
+.error-title {
+  font-weight: 600;
+}
+
+.net-name {
+  text-transform: capitalize;
+}
+
+.error-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.error-detail {
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.error-detail summary {
+  cursor: pointer;
+}
+
+.error-detail code {
+  display: block;
+  margin-top: 6px;
+  word-break: break-word;
+}
+
 .loading {
   display: flex;
   align-items: center;
