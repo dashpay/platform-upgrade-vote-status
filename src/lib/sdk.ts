@@ -57,13 +57,15 @@ async function withSdk<T>(network: Network, fn: (sdk: EvoSDK) => Promise<T>): Pr
 }
 
 export async function fetchUpgradeState(network: Network): Promise<UpgradeState> {
+  // Needs evo-sdk >= 5.0.0. Earlier bindings picked the first version above the
+  // SDK's own built-in protocol version, not the chain's, so once the chain
+  // passed that version they reported the current version (which every node
+  // signals) as "next" and the real candidate's tally was lost.
   const s = await withSdk(network, (sdk) => sdk.protocol.versionUpgradeState());
   return {
     currentProtocolVersion: s.currentProtocolVersion,
     nextProtocolVersion: s.nextProtocolVersion ?? null,
-    // The wasm binding mislabels the versions-counter value as "activationHeight";
-    // it is actually the vote count for the next version (ProtocolVersionVoteCount).
-    nextVersionVotes: s.activationHeight != null ? BigInt(s.activationHeight) : null,
+    nextVersionVotes: s.voteCount != null ? BigInt(s.voteCount) : null,
   };
 }
 
