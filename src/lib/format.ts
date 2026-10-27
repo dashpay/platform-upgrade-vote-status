@@ -26,12 +26,21 @@ export function formatTimeUntil(ms: number): string {
   return remaining < 60_000 ? 'imminent' : `in ${formatDuration(remaining)}`;
 }
 
+// GitHub tags carry a leading "v" (v5.0.0); node versions do not (5.0.0).
+const stripV = (v: string): string => v.replace(/^v/i, '');
+
 const versionParts = (v: string): number[] =>
-  v
+  stripV(v)
     .replace(/[^0-9.].*$/, '')
     .split('.')
     .map((p) => Number(p) || 0);
 
+const isPrerelease = (v: string): boolean => /^[0-9.]*-/.test(stripV(v));
+
+/**
+ * Orders by major.minor.patch; on a tie a release ranks above its
+ * prereleases (5.0.0 > 5.0.0-rc.8). Prereleases of one version tie.
+ */
 export function compareVersions(a: string, b: string): number {
   const pa = versionParts(a);
   const pb = versionParts(b);
@@ -39,7 +48,7 @@ export function compareVersions(a: string, b: string): number {
     const d = (pa[i] ?? 0) - (pb[i] ?? 0);
     if (d !== 0) return d;
   }
-  return 0;
+  return Number(isPrerelease(b)) - Number(isPrerelease(a));
 }
 
 /** Highest drive software version reported by any node. */
